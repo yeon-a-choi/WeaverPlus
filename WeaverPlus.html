@@ -1,0 +1,293 @@
+<!doctype html>
+ <head>
+  <title>WeaverPlus</title>
+  <script src="./sprite.js"></script>  <!--외부 스크립트 파일 링크-->
+ </head>
+ 
+ <body>
+  
+  <canvas id="canvas" width=420 height=480 style="border:1px solid black">
+  <p>이 브라우저는 캔버스를 지원하지 않습니다.</p>
+  </canvas>
+  
+  <script>
+  var cv,cx;
+  var isClick=false; //마우스 클릭 미클릭 확인 변수
+  
+  var landpos=0,frames=0,score=0; //땅위치, 프레임즈, 점수
+  var currentstate;  //현재 화면 상태
+  var states={Splash: 0, Game: 1, Score: 2}; //화면별 설정
+  var okbtn;  //게임 종료의 ok버튼
+  //var best=localStorage.removeItem("best"); //페이지 새로고침할 때마다 best 값 제거
+  best=localStorage.getItem("best")||0; //best에 저장된 값을 가져오거나 0으로 초기화.
+  
+  
+  cv=document.getElementById("canvas");
+  cx=cv.getContext("2d");
+  
+  //마녀에 대한 객체 생성
+  var witch= {
+				x: 60, y: 0, //마녀의 위치
+				frame: 0, //프레임 
+				velocity: 0, //속도
+				animation: [0, 1, 2, 1], // 캐릭터 애니메이션(3 프레임)
+			
+				angle: 0, radius: 14, gravity: 0.2, //중력
+				_jump: 4.2, 
+			
+				//점프 객체 생성 (캐릭터 점프하게)
+				jump : 	function() {
+							this.velocity = -this._jump;
+						},
+
+				// 스프라이트 애니메이션 및 캐릭터 위치 업데이트
+				update : function() {
+							//애니메이션 업데이트 및 게임속도 올라감
+							var n= (currentstate == states.Splash)? 10:5;   //현재 스플래시 화면이면 n을 10, 아니면 5로
+							this.frame += (frames % n == 0 )? 1 : 0;  		//프레임은 캐릭터 애니메이션 프레임, 프레임즈는 전역변수
+																			//frame은 frames를 n으로 나누었을 때 나머지가 0이면 1, 아니면 0을 더함
+							this.frame %= this.animation.length; 			//frame을 ( frame/animation 배열의 길이(==3) ) 결과의 나머지로
+														
+							if (currentstate == states.Splash) {  			//현재 상태가 0(Splash)이면 
+																			//n=10;
+								this.y = height - 280 + (5 * Math.cos(frames/10)); <!--math.cos는x축-->
+								this.angle = 0;
+							} 
+							
+							else { 											//현재 게임이나 종료 스코어면								
+								this.velocity += this.gravity;				//속도= 속도값 + 중력값
+								this.y += this.velocity; 					//y= y + 속도값 
+					
+								// 캐릭터가 땅에 닿으면 점수창으로 바뀜
+								if (this.y >= height - s_land.height-19) {
+									
+									this.y = height - s_land.height-19;		 //19는 캐릭터 땅에 안박히게 중심점값을 뺀 것
+									currentstate = states.Score;			 //현재 창을 점수창으로
+									this.velocity = this._jump;			 //정확한 회전을 위해 점프 속도를 설정
+								}
+								
+								//캔버스창 맨위 닿이면 땅으로 떨어지게. 점수창으로 바뀜
+								if(this.y<=0){
+									currentstate = states.Score;
+									this.velocity = this._jump;
+								}
+					
+								//마녀가 위로 올라가는 것 같지않으면 회전되어 떨어짐
+								if (this.velocity >= this._jump) {
+									this.frame = 1;
+									this.angle = Math.min(Math.PI/2, this.angle + 0.3); 
+								} 
+								
+								else {
+									this.angle = -0.3;
+								}
+						}
+				},
+
+				draw: function(cx) {
+					cx.save();
+					// 중심점 이동 및 회전
+					cx.translate(this.x, this.y); 		//중심점 위치 캐릭터 x,y로 바꿈
+					cx.rotate(this.angle);  			//캐릭터 회전
+					
+					var n = this.animation[this.frame]; //애니메이션 배열
+					// 마녀 캐릭터 출력
+					s_witch[n].draw(cx, -s_witch[n].width/2, -s_witch[n].height/2);	 //중심점으로 하려 /2
+					cx.restore();
+			   }
+		};
+		
+  var	sb_block = {  //장애물(손) 객체 생성
+
+				_sb_block: [],
+				
+				//장애물 리셋(ok버튼 눌렀을 때 첫화면으로 이동 시 초기화)
+				reset: function() {
+					this._sb_block = [];  
+				},
+
+				update: function() {
+						// 100프레임마다 sb_block 생성
+						if (frames % 100 == 0) {
+							// y 위치 계산
+							var _y = height - (s_shand.height+s_land.height+120+Math.random()*200);
+							// sb_block를 생성해서 _sb_block배열에 넣기
+							this._sb_block.push({
+								x: 500, y: _y,
+								width: s_shand.width, height: s_shand.height
+							});
+						}
+						
+						for (var i = 0, len = this._sb_block.length; i < len; i++) {
+							var p = this._sb_block[i];
+							if (i == 0) {
+								score += (p.x == witch.x)? 1 : 0;	  //장애물의 x와 캐릭터의 x값이 같으면 score+1
+				
+								// 교차지점
+								var cx = Math.min(Math.max(witch.x, p.x), p.x+p.width);
+								var cy1 = Math.min(Math.max(witch.y, p.y), p.y+p.height);
+								var cy2 = Math.min(Math.max(witch.y, p.y+p.height+80), p.y+2*p.height+80);
+								
+								var dx  = witch.x - cx;
+								var dy1 = witch.y - cy1;
+								var dy2 = witch.y - cy2;
+								
+								// 크기 영역
+								var d1 = dx*dx + dy1*dy1;
+								var d2 = dx*dx + dy2*dy2;
+								var r = witch.radius*witch.radius;
+								
+								// 캐릭터가 d1이나 d2보다 크면  (=장애물에 닿으면)
+								if (r > d1 || r > d2) {
+									currentstate = states.Score; //종료
+								}
+							}
+							// 손을 움직이고 만약 cv를 벗어나면 제거
+							p.x -= 2;
+							if (p.x < -p.width) {
+								this._sb_block.splice(i, 1);  // splice는 삭제할 항목 위치, 삭제할 항목 수 (i부터 시작해서 1개 지우기)
+								i--;
+								len--;
+							}
+						}
+					},
+					//장애물 출력
+					draw: function(cx) {
+						for (var i = 0, len = this._sb_block.length; i < len; i++) {
+							var p = this._sb_block[i];
+							s_shand.draw(cx, p.x, p.y);
+							s_lhand.draw(cx, p.x, p.y+80+p.height);
+						}
+					}
+			};
+ 			 
+			 //마우스 클릭 이벤트
+            function onMouseDown(e){
+			    if(e.which==1){ //마우스 왼쪽 버튼 클릭 시
+					switch (currentstate) {   //화면 이동  
+						//스플래쉬 화면에서는 게임으로 넘어가게
+						case states.Splash:  
+							currentstate = states.Game;
+							witch.jump(); //시작하자마자 점프
+							break;
+							
+						//게임 화면에서는 마우스 누르면 점프
+						case states.Game:  
+							witch.jump();
+							break;
+				
+						//스코어화면에서는 ok버튼 영역에 마우스 클릭 시 스플래시화면으로
+						case states.Score: 
+							var mx = e.offsetX, my = e.offsetY; //마우스 x,y 좌표
+				
+							// ok버튼 누르면 다시 스플래시 화면으로 돌아감
+							if ( (okbtn.x < mx && mx < okbtn.x + okbtn.width) 
+							    && (okbtn.y < my && my < okbtn.y + okbtn.height) ) {
+								sb_block.reset(); //sb_block 빈 배열로 초기화
+								currentstate = states.Splash; //스플래시 화면으로 이동
+								score = 0; //score를 다시 0으로.
+							}
+							break;
+					}
+				}
+			}
+
+			//게임 시작, 초기화
+			function main() {
+				
+				width  = 420, height = 480;
+				var e = "mousedown";
+				document.addEventListener(e, onMouseDown); //마우스 클릭 이벤트 함수로 이동 
+
+				currentstate = states.Splash; // 실행 시 첫화면을 스플래시 화면으로 설정
+			
+				// 그래픽과 okbtn 초기화
+				var img = new Image();
+				img.onload = function() {
+					initSprites(this);
+      					cx.fillStyle = s_dawn.color;
+					    okbtn = {  //okBut에 대한 위치 사이즈 객체 생성
+						    x: (width - s_okBut.width)/2,
+						    y: height - 200,
+						    width: s_okBut.width,
+						    height: s_okBut.height
+					    }
+					run();
+				}
+				img.src = "res/rereHalloweenBackgroundTry2.png"; //이미지 경로 지정
+			}
+
+			 //게임 스타트 업데이트 게임 루프
+			function run() {
+				var gameloop = function() {
+					update();
+					render();
+					window.requestAnimationFrame(gameloop, cv);  //setInterval 사용 시 계속 그려주려해서 에러 떠서 request를 사용
+				}
+				window.requestAnimationFrame(gameloop, cv);
+			}
+
+			 //땅, 캐릭터, 장애물 위치
+			function update() {
+				frames++;
+
+				if (currentstate != states.Score) { //점수창이 아닌 상태면
+					landpos = (landpos -2) % 14;  //땅을 왼쪽으로 2씩, -2, -4,-6,-8,-10,-12,0,-2,... 
+					 //이렇게해야 자연스럽게 움직이는데 삭제하면 안움직인다. x좌표 움직이게
+				} else { //점수창이면
+					best = Math.max(best, score);  //score의 최댓값을 best에 대입
+					localStorage.setItem("best", best); //로컬저장소에 best 값 저장
+				}
+				if (currentstate == states.Game) { //게임창이면
+					sb_block.update(); //장애물 업데이트
+				}
+				witch.update(); //캐릭터 업데이트. 캐릭터는 게임창 아니더라도 계속 있어야함
+			}
+
+			//캐릭터, 장애물 등 출력되는거 canvas에다 넣기
+			function render() {
+					// 배경색 (이미지 부족으로 인한)
+                    cx.fillStyle="#735591" //이미지 위쪽 보라색
+                    cx.fillRect(0, 0, width, height);
+                    cx.fill();
+
+                    cx.fillStyle="#423121";  //이미지 아래쪽 땅색
+                    cx.fillRect(0, s_dawn.height, width, height);
+                    cx.fill();
+					//배경 이미지 출력
+					s_dawn.draw(cx, 0, s_dawn.height-135);
+                    s_dawn.draw(cx, s_dawn.width, s_dawn.height-135);
+					sb_block.draw(cx);
+					witch.draw(cx); //마녀 캐릭터 출력
+                  
+					// 땅 스프라이트 출력
+					s_land.draw(cx, landpos, height - s_land.height);           	    //x를 -2씩 움직임 움직여보이게함. (height)480-56(땅높이)=424
+					s_land.draw(cx, landpos+s_land.width-2.7, height - s_land.height); //이미지가 부족해(112,56)서 비어있는 오른쪽에 붙임 -2.7은 이미지만들때 왼쪽에 하얀게 있어서...  
+
+					var centerWidth = width/2; // canvas 중심점
+
+					if (currentstate == states.Splash) { //스플래시 화면이면
+														  //cv에 스플래시스프라이트(동작 설명 그림)와 스플래시텍스트(GetReady) 띄우기
+                        s_text.GetReady.draw(cx, centerWidth - s_text.GetReady.width/2, height-380);     //텍스트, x는 화면 중앙, 적당한 높이 맞춰서
+						s_splash.draw(cx, centerWidth - s_splash.width/2, height - 300);                 //설명 그림, x는 화면 중앙, 적당한 높이 맞춰서
+					}
+					
+					if (currentstate == states.Score) { //점수창이면
+														// 게임오버 텍스트와 score(게임결과)창 출력
+						s_text.GameOver.draw(cx, centerWidth - s_text.GameOver.width/2, height-400);
+						s_esc.draw(cx, centerWidth - s_esc.width/2, height-340);
+						s_okBut.draw(cx, okbtn.x, okbtn.y);
+						//score(게임결과)에다가 score와 best 점수를 출력, 숫자 이미지는 Small
+						s_snum.draw(cx, centerWidth-47, height-304, score, null, 10);
+						s_snum.draw(cx, centerWidth-47, height-262, best, null, 10);
+					} else { //점수창이 아니면
+						//캔버스 윗쪽 중간에 스코어 출력, 숫자 이미지는 Big
+						s_bnum.draw(cx, null, 20, score, centerWidth);
+					}
+			}
+			//시작
+			main();
+
+</script>
+</body>
+</html>
